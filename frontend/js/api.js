@@ -35,6 +35,19 @@ const api = {
   delete: (path) => api.request('DELETE', path),
 };
 
+// ─── Supabase Config & Init ──────────────────────────────────────
+const SUPABASE_URL = window.ENV?.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = window.ENV?.SUPABASE_ANON_KEY || '';
+
+let supabaseClient = null;
+if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY) {
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (e) {
+    console.warn('Supabase client init warning:', e.message);
+  }
+}
+
 // ─── Auth Manager ─────────────────────────────────────────────────
 const Auth = {
   TOKEN_KEY: 'hr_token',
@@ -46,8 +59,8 @@ const Auth = {
     catch { return null; }
   },
   setSession(token, user) {
-    localStorage.setItem(this.TOKEN_KEY, token);
-    localStorage.setItem(this.USER_KEY, JSON.stringify(user));
+    if (token) localStorage.setItem(this.TOKEN_KEY, token);
+    if (user) localStorage.setItem(this.USER_KEY, JSON.stringify(user));
   },
   clear() {
     localStorage.removeItem(this.TOKEN_KEY);
@@ -56,29 +69,63 @@ const Auth = {
   isLoggedIn() { return !!this.getToken() && !!this.getUser(); },
 
   async login(email, password) {
+    if (supabaseClient) {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) throw new Error(error.message);
+      const token = data.session.access_token;
+      this.setSession(token, { email: data.user.email, name: data.user.user_metadata?.name || data.user.email.split('@')[0] });
+      const user = await this.refreshUser();
+      return user;
+    }
     const data = await api.post('/auth/login', { email, password });
     this.setSession(data.token, data.user);
     return data.user;
   },
+
   async register(name, email, password, targetRole) {
+    if (supabaseClient) {
+      const { data, error } = await supabaseClient.auth.signUp({
+        email,
+        password,
+        options: { data: { name, targetRole } }
+      });
+      if (error) throw new Error(error.message);
+      if (data.session) {
+        this.setSession(data.session.access_token, { name, email, targetRole });
+        const user = await this.refreshUser();
+        return user;
+      } else {
+        Toast.info('Confirmation email sent! Please verify your email.');
+        return { name, email, targetRole };
+      }
+    }
     const data = await api.post('/auth/register', { name, email, password, targetRole });
     this.setSession(data.token, data.user);
     return data.user;
   },
+
   async logout() {
+    if (supabaseClient) {
+      try { await supabaseClient.auth.signOut(); } catch {}
+    }
     try { await api.post('/auth/logout'); } catch {}
     this.clear();
     window.location.href = '/pages/login.html';
   },
+
   async refreshUser() {
     try {
       const data = await api.get('/auth/me');
-      localStorage.setItem(this.USER_KEY, JSON.stringify(data.user));
-      return data.user;
+      if (data.user) {
+        localStorage.setItem(this.USER_KEY, JSON.stringify(data.user));
+        return data.user;
+      }
     } catch {
       return this.getUser();
     }
+    return this.getUser();
   },
+
   requireAuth() {
     if (!this.isLoggedIn()) {
       window.location.href = '/pages/login.html';

@@ -4,69 +4,106 @@ const { protect } = require('../middleware/auth');
 const Session = require('../models/Session');
 const User = require('../models/User');
 
-// ─── AI API Helper (Gemini) ──────────────────────────────────────────────────
+// ─── AI API Helper (Groq Main -> Gemini Backup -> Demo Fallback) ────────────
 async function callClaude(messages, systemPrompt, maxTokens = 1000, demoCtx = {}) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-    return getDemoResponse(messages, demoCtx.role || 'SDE', demoCtx.round || 'Technical');
-  }
+  const groqApiKey = process.env.GROQ_API_KEY;
+  const geminiApiKey = process.env.GEMINI_API_KEY;
 
-  // Convert messages to Gemini format
-  // Gemini uses "user"/"model" roles and combines system prompt into first user message
-  const geminiContents = [];
+  // 1. Primary AI Provider: Groq API (Ultra-Fast Free Tier: Llama 3.3 70B)
+  if (groqApiKey && groqApiKey !== 'your_groq_api_key_here') {
+    try {
+      const formattedMessages = [];
+      if (systemPrompt) formattedMessages.push({ role: 'system', content: systemPrompt });
+      for (const msg of messages) {
+        formattedMessages.push({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content
+        });
+      }
 
-  // Add system prompt as first user message if provided
-  if (systemPrompt) {
-    geminiContents.push({
-      role: 'user',
-      parts: [{ text: `[System Instructions]: ${systemPrompt}\n\nAcknowledge these instructions briefly.` }]
-    });
-    geminiContents.push({
-      role: 'model',
-      parts: [{ text: 'Understood. I will follow these instructions as your AI interviewer.' }]
-    });
-  }
-
-  // Add conversation messages
-  for (const msg of messages) {
-    geminiContents.push({
-      role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: msg.content }]
-    });
-  }
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: geminiContents,
-        generationConfig: {
-          maxOutputTokens: maxTokens,
-          temperature: 0.7,
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqApiKey}`
         },
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-        ],
-      }),
-    }
-  );
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+          messages: formattedMessages,
+          max_tokens: maxTokens,
+          temperature: 0.7
+        })
+      });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini API error: ${err}`);
+      if (response.ok) {
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (text) return text;
+      } else {
+        console.warn(`Groq API error status ${response.status}. Attempting backup provider...`);
+      }
+    } catch (err) {
+      console.warn('Groq API call failed:', err.message, '- Falling back to backup provider...');
+    }
   }
 
-  const data = await response.json();
-  
-  if (data.error) throw new Error(`Gemini error: ${data.error.message}`);
-  
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('No response from Gemini');
-  
-  return text;
+  // 2. Secondary / Backup AI Provider: Gemini API (Free Tier Backup)
+  if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
+    try {
+      const geminiContents = [];
+      if (systemPrompt) {
+        geminiContents.push({
+          role: 'user',
+          parts: [{ text: `[System Instructions]: ${systemPrompt}\n\nAcknowledge these instructions briefly.` }]
+        });
+        geminiContents.push({
+          role: 'model',
+          parts: [{ text: 'Understood. I will follow these instructions as your AI interviewer.' }]
+        });
+      }
+
+      for (const msg of messages) {
+        geminiContents.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        });
+      }
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: geminiContents,
+            generationConfig: {
+              maxOutputTokens: maxTokens,
+              temperature: 0.7,
+            },
+            safetySettings: [
+              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+            ],
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (!data.error) {
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) return text;
+        }
+      } else {
+        console.warn(`Gemini API error status ${response.status}.`);
+      }
+    } catch (err) {
+      console.warn('Gemini API call failed:', err.message);
+    }
+  }
+
+  // 3. Built-in Demo Engine Fallback (Zero network / Zero key required)
+  return getDemoResponse(messages, demoCtx.role || 'SDE', demoCtx.round || 'Technical');
 }
 
 // ─── Rich Demo Response Bank ──────────────────────────────────────────────────

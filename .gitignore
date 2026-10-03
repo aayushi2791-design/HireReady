@@ -1,0 +1,14 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Node.js dependencies
+node_modules/
+
+# Vercel
+.vercel/
+
+# Windows/system files
+Thumbs.db
+.DS_Store

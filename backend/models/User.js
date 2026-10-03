@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Name cannot exceed 100 characters'],
   },
+  supabaseId: { type: String, unique: true, sparse: true },
   email: {
     type: String,
     required: [true, 'Email is required'],
@@ -18,7 +19,7 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Password is required'],
+    required: false,
     minlength: [8, 'Password must be at least 8 characters'],
     select: false, // never return password by default
   },

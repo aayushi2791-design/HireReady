@@ -88,19 +88,39 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ─── Database & Start ─────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
+// ─── Serverless DB Connection Middleware ──────────────────────────────────────
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hireready';
+let isDbConnecting = false;
 
-mongoose.connect(MONGO_URI)
-  .then(() => {
+const connectDB = async () => {
+  if (mongoose.connection.readyState >= 1) return;
+  if (isDbConnecting) return;
+  isDbConnecting = true;
+  try {
+    await mongoose.connect(MONGO_URI);
     console.log('✅ MongoDB connected');
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+  } finally {
+    isDbConnecting = false;
+  }
+};
+
+// Middleware to ensure DB connection on serverless requests
+app.use(async (req, res, next) => {
+  if (mongoose.connection.readyState === 0) {
+    await connectDB();
+  }
+  next();
+});
+
+// ─── Start Server (Local Dev & Standalone) ────────────────────────────────────
+const PORT = process.env.PORT || 5000;
+
+if (require.main === module || !process.env.VERCEL) {
+  connectDB().then(() => {
     app.listen(PORT, () => console.log(`🚀 HireReady server running on http://localhost:${PORT}`));
-  })
-  .catch(err => {
-    console.error('❌ MongoDB connection failed:', err.message);
-    console.log('⚠️  Starting without database (demo mode)');
-    app.listen(PORT, () => console.log(`🚀 HireReady server running on http://localhost:${PORT} (no DB)`));
   });
+}
 
 module.exports = app;

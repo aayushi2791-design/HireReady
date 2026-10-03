@@ -11,9 +11,24 @@
 | Frontend | HTML5, CSS3 (CSS Variables), Vanilla JS |
 | Backend | Node.js + Express.js |
 | Database | MongoDB + Mongoose |
-| AI Engine | Gemini API |
-| Auth | JWT + bcryptjs + HttpOnly Cookies |
+| AI Engine | Groq API (Main) / Gemini API (Backup) |
+| Auth | Supabase Auth (OAuth/Email) + JWT Fallback |
+| Deployment | Vercel (Serverless Functions) |
 | Security | Helmet, Rate Limiting, Input Validation, Account Lockout |
+
+---
+
+## 🚀 Deploying on Vercel
+
+1. Push your repository to GitHub.
+2. Import the repository into [Vercel](https://vercel.com).
+3. Add the following **Environment Variables** in Vercel settings:
+   - `MONGODB_URI`: Your MongoDB Atlas connection string.
+   - `GROQ_API_KEY`: Groq API key from console.groq.com (Primary AI).
+   - `GEMINI_API_KEY`: Gemini API key (Backup AI).
+   - `SUPABASE_URL`: Your Supabase Project URL (`https://xyz.supabase.co`).
+   - `SUPABASE_ANON_KEY`: Your Supabase Anonymous Key.
+4. Click **Deploy**! Vercel will automatically build the static frontend and route API endpoints via `@vercel/node`.
 
 ---
 
