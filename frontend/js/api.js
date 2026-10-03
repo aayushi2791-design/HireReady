@@ -36,8 +36,8 @@ const api = {
 };
 
 // ─── Supabase Config & Init ──────────────────────────────────────
-const SUPABASE_URL = window.ENV?.SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = window.ENV?.SUPABASE_ANON_KEY || '';
+const SUPABASE_URL = window.ENV?.SUPABASE_URL || 'https://aegfrfgetpxwefbzpfjy.supabase.co';
+const SUPABASE_ANON_KEY = window.ENV?.SUPABASE_ANON_KEY || 'sb_publishable_N1yaOjRWSw9-pbCNEMQWaw_Kk3A7h_j';
 
 let supabaseClient = null;
 if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY) {
