@@ -67,6 +67,11 @@ const connectDB = async () => {
     return mongoose.connection;
   }
 
+  // Check if running on Vercel with a default localhost URI
+  if (process.env.VERCEL && (MONGO_URI.includes('localhost') || MONGO_URI.includes('127.0.0.1'))) {
+    throw new Error('MONGODB_URI is missing or pointing to localhost on Vercel. Please add a valid MongoDB Atlas connection string (mongodb+srv://...) in your Vercel Project Settings > Environment Variables.');
+  }
+
   if (!cachedDbPromise) {
     cachedDbPromise = mongoose.connect(MONGO_URI, {
       bufferCommands: false,
@@ -90,7 +95,8 @@ app.use(async (req, res, next) => {
     await connectDB();
     next();
   } catch (err) {
-    res.status(500).json({ error: 'Database connection error: ' + err.message });
+    console.error('DB Middleware Error:', err.message);
+    res.status(503).json({ error: err.message });
   }
 });
 
