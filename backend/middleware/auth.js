@@ -2,13 +2,16 @@ const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 const User = require('../models/User');
 
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://aegfrfgetpxwefbzpfjy.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_N1yaOjRWSw9-pbCNEMQWaw_Kk3A7h_j';
+
 let supabase;
-if (
-  process.env.SUPABASE_URL &&
-  process.env.SUPABASE_ANON_KEY &&
-  process.env.SUPABASE_URL !== 'https://your-project.supabase.co'
-) {
-  supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+  try {
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (e) {
+    console.error('Supabase server init error:', e.message);
+  }
 }
 
 const protect = async (req, res, next) => {
@@ -55,13 +58,44 @@ const protect = async (req, res, next) => {
           return next();
         }
       } catch (sbErr) {
-        // Fallback to legacy JWT verification if Supabase fails
+        // Fallback below
       }
     }
 
+    // 1b. Supabase Decoded Token Fallback (for asymmetric Supabase JWTs)
+    const decoded = jwt.decode(token);
+    if (decoded && decoded.sub && decoded.email) {
+      if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+        return res.status(401).json({ error: 'Token expired. Please log in again.' });
+      }
+
+      let user = await User.findOne({
+        $or: [{ supabaseId: decoded.sub }, { email: decoded.email.toLowerCase() }]
+      });
+
+      if (!user) {
+        user = await User.create({
+          supabaseId: decoded.sub,
+          email: decoded.email.toLowerCase(),
+          name: decoded.user_metadata?.name || decoded.user_metadata?.full_name || decoded.email.split('@')[0],
+          targetRole: decoded.user_metadata?.targetRole || 'SDE',
+        });
+      } else if (!user.supabaseId) {
+        user.supabaseId = decoded.sub;
+        await user.save();
+      }
+
+      if (user.isLocked()) {
+        return res.status(423).json({ error: 'Account temporarily locked.' });
+      }
+
+      req.user = user;
+      return next();
+    }
+
     // 2. Legacy JWT verification fallback
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_for_dev');
-    const user = await User.findById(decoded.id).select('-password');
+    const verified = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_for_dev');
+    const user = await User.findById(verified.id).select('-password');
     if (!user) {
       return res.status(401).json({ error: 'User not found.' });
     }

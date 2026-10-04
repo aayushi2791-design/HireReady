@@ -58,6 +58,32 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
 
+// ─── Serverless DB Connection Middleware ──────────────────────────────────────
+const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hireready';
+let isDbConnecting = false;
+
+const connectDB = async () => {
+  if (mongoose.connection.readyState >= 1) return;
+  if (isDbConnecting) return;
+  isDbConnecting = true;
+  try {
+    await mongoose.connect(MONGO_URI);
+    console.log('✅ MongoDB connected');
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+  } finally {
+    isDbConnecting = false;
+  }
+};
+
+// Middleware to ensure DB connection BEFORE any route executes
+app.use(async (req, res, next) => {
+  if (mongoose.connection.readyState === 0) {
+    await connectDB();
+  }
+  next();
+});
+
 // ─── Serve Frontend ───────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '../frontend')));
 
@@ -86,32 +112,6 @@ app.use((err, req, res, next) => {
   res.status(status).json({
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
   });
-});
-
-// ─── Serverless DB Connection Middleware ──────────────────────────────────────
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hireready';
-let isDbConnecting = false;
-
-const connectDB = async () => {
-  if (mongoose.connection.readyState >= 1) return;
-  if (isDbConnecting) return;
-  isDbConnecting = true;
-  try {
-    await mongoose.connect(MONGO_URI);
-    console.log('✅ MongoDB connected');
-  } catch (err) {
-    console.error('❌ MongoDB connection error:', err.message);
-  } finally {
-    isDbConnecting = false;
-  }
-};
-
-// Middleware to ensure DB connection on serverless requests
-app.use(async (req, res, next) => {
-  if (mongoose.connection.readyState === 0) {
-    await connectDB();
-  }
-  next();
 });
 
 // ─── Start Server (Local Dev & Standalone) ────────────────────────────────────
