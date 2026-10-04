@@ -250,7 +250,15 @@ const FOLLOWUPS = [
 const usedQuestions = new Map(); // sessionId -> Set of used indices
 
 function getDemoResponse(messages, role = 'SDE', round = 'Technical') {
-  const msgCount = messages.filter(m => m.role === 'user').length;
+  const userMsgs = messages.filter(m => m.role === 'user');
+  const msgCount = userMsgs.length;
+  const lastUserMsg = userMsgs[userMsgs.length - 1]?.content?.toLowerCase().trim() || '';
+
+  // Handle meta / user feedback gracefully
+  if (lastUserMsg.includes('already answered') || lastUserMsg.includes('already asked') || lastUserMsg.includes('repeat')) {
+    return "My apologies for repeating that! Let's move on to a new topic. How do you handle database connection pooling in a high-throughput backend service?";
+  }
+
   const roundKey = round.toLowerCase().includes('hr') ? 'hr' : 'technical';
   const bank = (DEMO_QUESTIONS[role] || DEMO_QUESTIONS['SDE'])[roundKey] || [];
 
@@ -259,26 +267,9 @@ function getDemoResponse(messages, role = 'SDE', round = 'Technical') {
     return `Hello! Welcome to your ${role} ${round} interview. I'm your AI interviewer today. Let's get started!\n\n${bank[0]}`;
   }
 
-  // Every 3rd question, ask a follow-up
-  if (msgCount % 3 === 0 && msgCount > 0) {
-    return FOLLOWUPS[Math.floor(Math.random() * FOLLOWUPS.length)];
-  }
-
-  // Pick a question from bank sequentially, avoiding repeats
-  const sessionKey = messages[0]?.content?.slice(0, 20) || 'default';
-  if (!usedQuestions.has(sessionKey)) usedQuestions.set(sessionKey, new Set());
-  const used = usedQuestions.get(sessionKey);
-
-  // Find next unused question
-  for (let i = 0; i < bank.length; i++) {
-    if (!used.has(i)) {
-      used.add(i);
-      return bank[i];
-    }
-  }
-
-  // All questions used — wrap around with follow-ups
-  return FOLLOWUPS[msgCount % FOLLOWUPS.length];
+  // Advance sequentially through question bank based on message index
+  const nextIndex = msgCount % bank.length;
+  return bank[nextIndex];
 }
 
 function buildInterviewerSystem(role, difficulty, pressureMode, resumeText, round) {
