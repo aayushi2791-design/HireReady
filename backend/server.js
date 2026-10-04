@@ -60,28 +60,38 @@ if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
 
 // ─── Serverless DB Connection Middleware ──────────────────────────────────────
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hireready';
-let isDbConnecting = false;
+let cachedDbPromise = null;
 
 const connectDB = async () => {
-  if (mongoose.connection.readyState >= 1) return;
-  if (isDbConnecting) return;
-  isDbConnecting = true;
-  try {
-    await mongoose.connect(MONGO_URI);
-    console.log('✅ MongoDB connected');
-  } catch (err) {
-    console.error('❌ MongoDB connection error:', err.message);
-  } finally {
-    isDbConnecting = false;
+  if (mongoose.connection.readyState >= 1) {
+    return mongoose.connection;
   }
+
+  if (!cachedDbPromise) {
+    cachedDbPromise = mongoose.connect(MONGO_URI, {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000,
+    }).then((m) => {
+      console.log('✅ MongoDB connected');
+      return m;
+    }).catch((err) => {
+      cachedDbPromise = null;
+      console.error('❌ MongoDB connection error:', err.message);
+      throw err;
+    });
+  }
+
+  return cachedDbPromise;
 };
 
 // Middleware to ensure DB connection BEFORE any route executes
 app.use(async (req, res, next) => {
-  if (mongoose.connection.readyState === 0) {
+  try {
     await connectDB();
+    next();
+  } catch (err) {
+    res.status(500).json({ error: 'Database connection error: ' + err.message });
   }
-  next();
 });
 
 // ─── Serve Frontend ───────────────────────────────────────────────────────────
