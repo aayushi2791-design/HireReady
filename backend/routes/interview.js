@@ -49,56 +49,54 @@ async function callClaude(messages, systemPrompt, maxTokens = 1000, demoCtx = {}
 
   // 2. Secondary / Backup AI Provider: Gemini API (Free Tier Backup)
   if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
-    try {
-      const geminiContents = [];
-      if (systemPrompt) {
-        geminiContents.push({
-          role: 'user',
-          parts: [{ text: `[System Instructions]: ${systemPrompt}\n\nAcknowledge these instructions briefly.` }]
-        });
-        geminiContents.push({
-          role: 'model',
-          parts: [{ text: 'Understood. I will follow these instructions as your AI interviewer.' }]
-        });
-      }
+    const modelsToTry = [
+      process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash'
+    ];
 
-      for (const msg of messages) {
-        geminiContents.push({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }]
-        });
-      }
-
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: geminiContents,
-            generationConfig: {
-              maxOutputTokens: maxTokens,
-              temperature: 0.7,
-            },
-            safetySettings: [
-              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-            ],
-          }),
+    for (const modelName of modelsToTry) {
+      try {
+        const geminiContents = [];
+        if (systemPrompt) {
+          geminiContents.push({
+            role: 'user',
+            parts: [{ text: `[System Instructions]: ${systemPrompt}` }]
+          });
+          geminiContents.push({
+            role: 'model',
+            parts: [{ text: 'Understood.' }]
+          });
         }
-      );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (!data.error) {
+        for (const msg of messages) {
+          geminiContents.push({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: msg.content }]
+          });
+        }
+
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: geminiContents })
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
           const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
           if (text) return text;
+        } else {
+          const errData = await response.json().catch(() => ({}));
+          console.warn(`Gemini model ${modelName} status ${response.status}:`, errData.error?.message || response.statusText);
         }
-      } else {
-        console.warn(`Gemini API error status ${response.status}.`);
+      } catch (err) {
+        console.warn(`Gemini model ${modelName} call failed:`, err.message);
       }
-    } catch (err) {
-      console.warn('Gemini API call failed:', err.message);
     }
   }
 
