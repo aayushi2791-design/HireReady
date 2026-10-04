@@ -252,9 +252,20 @@ function getDemoResponse(messages, role = 'SDE', round = 'Technical') {
   const msgCount = userMsgs.length;
   const lastUserMsg = userMsgs[userMsgs.length - 1]?.content?.toLowerCase().trim() || '';
 
+  // Handle "don't know", "no idea", "not sure", "pass"
+  if (lastUserMsg.includes('do not know') || lastUserMsg.includes("don't know") || lastUserMsg.includes('no idea') || lastUserMsg.includes('not sure') || lastUserMsg === 'no' || lastUserMsg === 'pass') {
+    const pivotQuestions = [
+      "No problem at all! Let's pivot to a different topic. Can you explain the difference between SQL and NoSQL databases?",
+      "That's completely fine! Let me ask another question: How do HTTP and HTTPS differ, and why is SSL/TLS important?",
+      "No worries! Moving on: How would you approach designing a simple URL shortener service?",
+      "Understood! Let me try another angle: How does garbage collection work in your primary programming language?"
+    ];
+    return pivotQuestions[msgCount % pivotQuestions.length];
+  }
+
   // Handle meta / user feedback gracefully
   if (lastUserMsg.includes('already answered') || lastUserMsg.includes('already asked') || lastUserMsg.includes('repeat')) {
-    return "My apologies for repeating that! Let's move on to a new topic. How do you handle database connection pooling in a high-throughput backend service?";
+    return "My apologies for repeating that! Let me ask a new question. How do you handle database connection pooling in a high-throughput backend service?";
   }
 
   const roundKey = round.toLowerCase().includes('hr') ? 'hr' : 'technical';
@@ -268,6 +279,80 @@ function getDemoResponse(messages, role = 'SDE', round = 'Technical') {
   // Advance sequentially through question bank based on message index
   const nextIndex = msgCount % bank.length;
   return bank[nextIndex];
+}
+
+function calculateOfflineEvaluation(session) {
+  const userMessages = session.messages.filter(m => m.role === 'user');
+  if (userMessages.length === 0) {
+    return {
+      technicalAccuracy: 0, communication: 0, confidence: 0, overallScore: 0,
+      fitScore: 0.0, answerQuality: 0, strengths: ['Attended interview'],
+      weaknesses: ['No answers provided'], fillerWordCount: 0, detectedFillerWords: [],
+      improvementRoadmap: ['Attempt questions next time'], feedback: 'No responses were given during the interview.', trend: 'negative'
+    };
+  }
+
+  let unknownCount = 0;
+  let totalWords = 0;
+  let shortCount = 0;
+  let allFillerWords = [];
+
+  for (const m of userMessages) {
+    const txt = m.content.toLowerCase().trim();
+    if (m.fillerWords && Array.isArray(m.fillerWords)) {
+      allFillerWords.push(...m.fillerWords);
+    }
+    const words = txt.split(/\s+/).length;
+    totalWords += words;
+
+    if (txt.includes('do not know') || txt.includes("don't know") || txt.includes('no idea') || txt.includes('not sure') || txt === 'no' || txt === 'pass') {
+      unknownCount++;
+    } else if (words < 6) {
+      shortCount++;
+    }
+  }
+
+  const avgWords = totalWords / userMessages.length;
+  const unknownRatio = unknownCount / userMessages.length;
+
+  let techScore = Math.max(15, Math.round(85 - (unknownRatio * 75) - (shortCount * 10)));
+  let commScore = Math.max(20, Math.round(Math.min(95, (avgWords * 2.5) + 30 - (unknownRatio * 40))));
+  let confScore = Math.max(15, Math.round(80 - (unknownRatio * 65) - (shortCount * 8)));
+  let overallScore = Math.round((techScore * 0.45) + (commScore * 0.3) + (confScore * 0.25));
+  let fitScore = parseFloat((overallScore / 10).toFixed(1));
+
+  let strengths = [];
+  let weaknesses = [];
+  let roadmap = [];
+  let feedback = '';
+
+  if (unknownRatio > 0.35 || overallScore < 50) {
+    strengths = ['Honesty about knowledge gaps', 'Completed the practice session'];
+    weaknesses = ['Needs deeper technical preparation', 'Multiple unanswered questions', 'Short response length'];
+    roadmap = ['Review core data structures & algorithms', 'Practice mock interviews regularly', 'Study system design fundamentals'];
+    feedback = 'You encountered difficulties with several technical questions in this session. Revisit fundamental concepts before your next practice.';
+  } else {
+    strengths = ['Good communication clarity', 'Strong technical foundation', 'Structured explanation'];
+    weaknesses = ['Could provide more concrete examples', 'Work on reducing filler words'];
+    roadmap = ['Practice STAR method for responses', 'Deep dive into edge case handling'];
+    feedback = 'Solid performance overall! Focus on providing specific real-world examples to boost your score.';
+  }
+
+  return {
+    technicalAccuracy: techScore,
+    communication: commScore,
+    confidence: confScore,
+    overallScore: overallScore,
+    fitScore: fitScore,
+    answerQuality: techScore,
+    strengths,
+    weaknesses,
+    fillerWordCount: allFillerWords.length,
+    detectedFillerWords: Array.from(new Set(allFillerWords)),
+    improvementRoadmap: roadmap,
+    feedback,
+    trend: overallScore >= 60 ? 'positive' : 'negative'
+  };
 }
 
 function buildInterviewerSystem(role, difficulty, pressureMode, resumeText, round) {
@@ -422,13 +507,7 @@ Return ONLY valid JSON (no markdown) with this exact structure:
   "trend": "<positive|negative|stable>"
 }`;
 
-    let evaluation = {
-      technicalAccuracy: 75, communication: 72, confidence: 68, overallScore: 72,
-      fitScore: 7.2, answerQuality: 74, strengths: ['Good communication', 'Technical knowledge'],
-      weaknesses: ['Needs more specifics', 'Work on filler words'],
-      fillerWordCount: 0, detectedFillerWords: [], improvementRoadmap: ['Practice STAR method', 'Study system design'],
-      feedback: 'Good overall performance. Keep practicing for improvement.', trend: 'positive',
-    };
+    let evaluation = calculateOfflineEvaluation(session);
 
     try {
       const evalText = await callClaude([
@@ -437,7 +516,9 @@ Return ONLY valid JSON (no markdown) with this exact structure:
 
       const cleanText = evalText.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleanText);
-      evaluation = { ...evaluation, ...parsed };
+      if (parsed && typeof parsed.overallScore === 'number') {
+        evaluation = { ...evaluation, ...parsed };
+      }
     } catch (e) {
       console.error('Eval parsing error:', e.message);
     }
