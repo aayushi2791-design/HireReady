@@ -250,35 +250,54 @@ const usedQuestions = new Map(); // sessionId -> Set of used indices
 function getDemoResponse(messages, role = 'SDE', round = 'Technical') {
   const userMsgs = messages.filter(m => m.role === 'user');
   const msgCount = userMsgs.length;
-  const lastUserMsg = userMsgs[userMsgs.length - 1]?.content?.toLowerCase().trim() || '';
+  const lastUserMsg = userMsgs[userMsgs.length - 1]?.content || '';
+  const cleanLastUser = lastUserMsg.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
 
-  // Handle "don't know", "no idea", "not sure", "pass"
-  if (lastUserMsg.includes('do not know') || lastUserMsg.includes("don't know") || lastUserMsg.includes('no idea') || lastUserMsg.includes('not sure') || lastUserMsg === 'no' || lastUserMsg === 'pass') {
-    const pivotQuestions = [
-      "No problem at all! Let's pivot to a different topic. Can you explain the difference between SQL and NoSQL databases?",
-      "That's completely fine! Let me ask another question: How do HTTP and HTTPS differ, and why is SSL/TLS important?",
-      "No worries! Moving on: How would you approach designing a simple URL shortener service?",
-      "Understood! Let me try another angle: How does garbage collection work in your primary programming language?"
-    ];
-    return pivotQuestions[msgCount % pivotQuestions.length];
-  }
-
-  // Handle meta / user feedback gracefully
-  if (lastUserMsg.includes('already answered') || lastUserMsg.includes('already asked') || lastUserMsg.includes('repeat')) {
-    return "My apologies for repeating that! Let me ask a new question. How do you handle database connection pooling in a high-throughput backend service?";
-  }
+  // Find all questions already asked by assistant in this session to guarantee ZERO REPEATS
+  const askedQuestions = new Set(
+    messages
+      .filter(m => m.role === 'assistant')
+      .map(m => m.content.trim())
+  );
 
   const roundKey = round.toLowerCase().includes('hr') ? 'hr' : 'technical';
-  const bank = (DEMO_QUESTIONS[role] || DEMO_QUESTIONS['SDE'])[roundKey] || [];
+  const primaryBank = (DEMO_QUESTIONS[role] || DEMO_QUESTIONS['SDE'])[roundKey] || DEMO_QUESTIONS.SDE.technical;
+  
+  const additionalBank = [
+    "How do you handle database connection pooling in a high-throughput backend service?",
+    "Can you explain the difference between processes and threads, and how memory is shared?",
+    "What is the difference between optimistic and pessimistic locking in databases?",
+    "How do you approach API rate limiting using the token bucket or leaky bucket algorithm?",
+    "Can you explain how a binary search tree differs from a balanced BST like AVL or Red-Black tree?",
+    "How do HTTP and HTTPS differ, and why is SSL/TLS handshake important?",
+    "How would you approach designing a simple URL shortener service like Bitly?"
+  ];
+
+  const fullBank = [...primaryBank, ...additionalBank];
+
+  // Find the FIRST question that has NOT been asked in this session
+  let nextQuestion = fullBank.find(q => {
+    const qClean = q.trim();
+    return !Array.from(askedQuestions).some(asked => asked.includes(qClean) || qClean.includes(asked));
+  });
+
+  if (!nextQuestion) {
+    nextQuestion = `Can you describe a challenging technical problem you solved recently and how you approached it?`;
+  }
+
+  // Detect non-answers or brief responses (including "dont know", "no idea", "ok", "what")
+  const isIgnorantOrBrief = ['dont know', 'do not know', 'no idea', 'idk', 'dunno', 'not sure', 'no', 'pass', 'skip', 'ok', 'what', 'huh', 'nothing'].some(p => cleanLastUser.includes(p));
 
   // Opening message
   if (msgCount === 0) {
-    return `Hello! Welcome to your ${role} ${round} interview. I'm your AI interviewer today. Let's get started!\n\n${bank[0]}`;
+    return `Hello! Welcome to your ${role} ${round} interview. I'm your AI interviewer today. Let's get started!\n\n${fullBank[0]}`;
   }
 
-  // Advance sequentially through question bank based on message index
-  const nextIndex = msgCount % bank.length;
-  return bank[nextIndex];
+  if (isIgnorantOrBrief) {
+    return `No problem! Let's move on to the next question:\n\n${nextQuestion}`;
+  }
+
+  return nextQuestion;
 }
 
 function calculateOfflineEvaluation(session) {
@@ -286,39 +305,57 @@ function calculateOfflineEvaluation(session) {
   if (userMessages.length === 0) {
     return {
       technicalAccuracy: 0, communication: 0, confidence: 0, overallScore: 0,
-      fitScore: 0.0, answerQuality: 0, strengths: ['Attended interview'],
-      weaknesses: ['No answers provided'], fillerWordCount: 0, detectedFillerWords: [],
-      improvementRoadmap: ['Attempt questions next time'], feedback: 'No responses were given during the interview.', trend: 'negative'
+      fitScore: 0.0, answerQuality: 0, strengths: ['Session initiated'],
+      weaknesses: ['No questions were answered'], fillerWordCount: 0, detectedFillerWords: [],
+      improvementRoadmap: ['Attempt to answer technical questions'], feedback: 'Zero responses were provided during the interview.', trend: 'negative'
     };
   }
 
-  let unknownCount = 0;
-  let totalWords = 0;
-  let shortCount = 0;
+  let totalQuestions = userMessages.length;
+  let nonAnswersCount = 0;
+  let briefAnswersCount = 0;
+  let detailedAnswersCount = 0;
+  let totalScorePoints = 0;
   let allFillerWords = [];
 
   for (const m of userMessages) {
     const txt = m.content.toLowerCase().trim();
+    const cleanTxt = txt.replace(/[^a-z0-9\s]/g, '');
     if (m.fillerWords && Array.isArray(m.fillerWords)) {
       allFillerWords.push(...m.fillerWords);
     }
-    const words = txt.split(/\s+/).length;
-    totalWords += words;
+    const words = cleanTxt.split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
 
-    if (txt.includes('do not know') || txt.includes("don't know") || txt.includes('no idea') || txt.includes('not sure') || txt === 'no' || txt === 'pass') {
-      unknownCount++;
-    } else if (words < 6) {
-      shortCount++;
+    const isNonAnswer = ['dont know', 'do not know', 'no idea', 'idk', 'dunno', 'not sure', 'no', 'pass', 'skip', 'ok', 'what', 'huh', 'nothing'].some(p => cleanTxt.includes(p)) || wordCount < 3;
+
+    if (isNonAnswer) {
+      nonAnswersCount++;
+      totalScorePoints += 0; // Strict 0 marks for non-answers!
+    } else if (wordCount < 15) {
+      briefAnswersCount++;
+      totalScorePoints += 35; // Few marks for brief answers
+    } else {
+      detailedAnswersCount++;
+      const depthBonus = Math.min(25, (wordCount - 15) * 1.5);
+      totalScorePoints += (70 + depthBonus); // 70%+ for proper detailed answers
     }
   }
 
-  const avgWords = totalWords / userMessages.length;
-  const unknownRatio = unknownCount / userMessages.length;
+  let averagePercentage = Math.round(totalScorePoints / totalQuestions);
+  
+  // If ALL questions were non-answers, force absolute ZERO marks!
+  if (nonAnswersCount === totalQuestions) {
+    averagePercentage = 0;
+  }
 
-  let techScore = Math.max(15, Math.round(85 - (unknownRatio * 75) - (shortCount * 10)));
-  let commScore = Math.max(20, Math.round(Math.min(95, (avgWords * 2.5) + 30 - (unknownRatio * 40))));
-  let confScore = Math.max(15, Math.round(80 - (unknownRatio * 65) - (shortCount * 8)));
-  let overallScore = Math.round((techScore * 0.45) + (commScore * 0.3) + (confScore * 0.25));
+  let techScore = averagePercentage;
+  let commScore = nonAnswersCount === totalQuestions ? 0 : Math.min(100, Math.round((detailedAnswersCount * 85 + briefAnswersCount * 40) / totalQuestions));
+  let confScore = nonAnswersCount === totalQuestions ? 0 : Math.min(100, Math.round((detailedAnswersCount * 80 + briefAnswersCount * 50) / totalQuestions));
+  
+  let overallScore = Math.round((techScore * 0.5) + (commScore * 0.3) + (confScore * 0.2));
+  if (nonAnswersCount === totalQuestions) overallScore = 0;
+
   let fitScore = parseFloat((overallScore / 10).toFixed(1));
 
   let strengths = [];
@@ -326,16 +363,21 @@ function calculateOfflineEvaluation(session) {
   let roadmap = [];
   let feedback = '';
 
-  if (unknownRatio > 0.35 || overallScore < 50) {
-    strengths = ['Honesty about knowledge gaps', 'Completed the practice session'];
-    weaknesses = ['Needs deeper technical preparation', 'Multiple unanswered questions', 'Short response length'];
-    roadmap = ['Review core data structures & algorithms', 'Practice mock interviews regularly', 'Study system design fundamentals'];
-    feedback = 'You encountered difficulties with several technical questions in this session. Revisit fundamental concepts before your next practice.';
+  if (overallScore === 0) {
+    strengths = ['Attended the practice interview session'];
+    weaknesses = ['Did not answer any technical questions', 'Gave non-responses (e.g. "dont know", "ok")', 'Zero technical demonstration'];
+    roadmap = ['Study core concepts before attempting practice interviews', 'Review data structures & system design basics', 'Practice speaking answers out loud'];
+    feedback = 'You did not attempt to answer any of the questions asked (0 marks). Focus on studying core concepts and try to explain your technical thoughts next time.';
+  } else if (overallScore < 50) {
+    strengths = ['Attempted some questions', 'Honesty regarding knowledge gaps'];
+    weaknesses = ['Answers lacked depth and technical detail', 'Multiple unanswered or brief responses', 'Needs stronger conceptual foundation'];
+    roadmap = ['Expand your answers beyond 1-2 sentences', 'Use technical terms and concrete examples', 'Practice explaining concepts step-by-step'];
+    feedback = 'You provided very brief or incomplete answers. To score higher, try to elaborate on your reasoning and explain technical concepts in detail.';
   } else {
-    strengths = ['Good communication clarity', 'Strong technical foundation', 'Structured explanation'];
-    weaknesses = ['Could provide more concrete examples', 'Work on reducing filler words'];
-    roadmap = ['Practice STAR method for responses', 'Deep dive into edge case handling'];
-    feedback = 'Solid performance overall! Focus on providing specific real-world examples to boost your score.';
+    strengths = ['Detailed technical answers', 'Strong conceptual understanding', 'Good communication flow'];
+    weaknesses = ['Could optimize edge case explanations', 'Reduce minor filler words'];
+    roadmap = ['Practice advanced system design scenarios', 'Refine edge-case analysis in coding rounds'];
+    feedback = 'Great job! You provided thorough, well-explained answers. Keep practicing to sharpen your advanced technical interview skills.';
   }
 
   return {
