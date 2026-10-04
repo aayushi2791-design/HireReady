@@ -22,7 +22,13 @@ const api = {
     try {
       const res = await fetch(`${API_BASE}${path}`, opts);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Request failed');
+      if (!res.ok) {
+        if (res.status === 401 && data.error && (data.error.includes('expired') || data.error.includes('token') || data.error.includes('Not authorized'))) {
+          Auth.clear();
+          setTimeout(() => { window.location.href = '/pages/login.html'; }, 1200);
+        }
+        throw new Error(data.error || 'Request failed');
+      }
       return data;
     } catch (err) {
       if (err.message === 'Failed to fetch') throw new Error('Cannot connect to server. Make sure the backend is running.');
