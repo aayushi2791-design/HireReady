@@ -1,6 +1,8 @@
 # HireReady — AI-Powered Interview Preparation Platform
 
-> "From Practice to Placement" — 
+> "From Practice to Placement"
+
+🌐 **Live Website**: [https://hire-ready-steel.vercel.app](https://hire-ready-steel.vercel.app)
 
 ---
 
@@ -114,7 +116,7 @@ The server runs on **http://localhost:5000** and serves the frontend automatical
 
 Visit: **http://localhost:5000**
 
-Deployed link: **https://thefifthbit.onrender.com**
+Deployed link: **https://hire-ready-steel.vercel.app**
 
 ---
 
