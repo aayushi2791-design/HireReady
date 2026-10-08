@@ -20,6 +20,85 @@
 
 ---
 
+## 🏛️ System Architecture
+
+HireReady is built on a modern, decoupled serverless architecture separating static frontend presentation, identity management, serverless API execution, dual LLM inference engines, and cloud data persistence.
+
+### Architecture Diagram
+
+```mermaid
+flowchart TD
+    subgraph Client["Client Layer (Frontend)"]
+        UI["Landing & Dashboard UI (HTML5 / CSS / Vanilla JS)"]
+        Editor["Monaco Coding Sandbox & Anti-Cheat Engine"]
+        APIClient["API Client & Auth Manager (js/api.js)"]
+    end
+
+    subgraph Auth["Authentication & Security Layer"]
+        SupaAuth["Supabase Auth (OAuth / Email Verification)"]
+        JWT["JWT Security Middleware (backend/middleware/auth.js)"]
+    end
+
+    subgraph Gateway["Serverless API Gateway (Vercel / Express)"]
+        Router["Express API Router (api/index.js & backend/server.js)"]
+        AuthRoute["Auth Routes (/api/auth)"]
+        InterviewRoute["Interview Engine (/api/interview)"]
+        EvalRoute["Evaluation Engine (/api/evaluation)"]
+        UserRoute["User & Leaderboard Routes (/api/users & /api/leaderboard)"]
+    end
+
+    subgraph AI["AI Intelligence Engine"]
+        Groq["Groq API (Primary LLM - Low Latency LLaMA 3)"]
+        Gemini["Google Gemini API (Backup LLM Engine)"]
+    end
+
+    subgraph Storage["Persistence Layer"]
+        MongoDB[("MongoDB Atlas Database")]
+    end
+
+    UI --> APIClient
+    Editor --> APIClient
+    APIClient <--> SupaAuth
+    APIClient -- "REST API (JWT Bearer Token)" --> Router
+
+    Router --> AuthRoute
+    Router --> InterviewRoute
+    Router --> EvalRoute
+    Router --> UserRoute
+
+    AuthRoute --> JWT
+    JWT <--> MongoDB
+
+    InterviewRoute <--> Groq
+    InterviewRoute <--> Gemini
+    InterviewRoute <--> MongoDB
+
+    EvalRoute <--> MongoDB
+    UserRoute <--> MongoDB
+```
+
+### Component Breakdown
+
+1. **Client Layer (Frontend)**
+   - **Responsive UI**: Lightweight HTML5/CSS3 single-page navigation styled with CSS custom variables (dark and light themes).
+   - **Interactive Sandbox & Anti-Cheat Engine**: Client-side code editor for live coding challenges integrated with anti-cheat telemetry (monitoring tab switches, copy-paste events, and window focus loss).
+
+2. **Authentication & Security**
+   - **Dual Authentication**: Combines Supabase Auth (for secure email confirmation and OAuth) with server-verified JWT authorization headers across protected API endpoints.
+
+3. **Serverless API Gateway**
+   - **Express Micro-routing**: Serves as the central API entry point (`/api/*`), optimized for Vercel Serverless Functions with MongoDB connection pooling, rate limiting, and Helmet security protection.
+
+4. **AI Intelligence Engine**
+   - **Dynamic Interview Engine**: Generates role-tailored and resume-based questions with adaptive difficulty.
+   - **Dual LLM Architecture**: Uses **Groq API** as the primary high-speed inference engine for real-time interview dialog, seamlessly failing over to **Google Gemini API** when needed.
+   - **Evaluation Engine**: Computes technical accuracy, filler word counts, sentiment indicators, and overall Role Readiness Scores.
+
+5. **Persistence Layer**
+   - **MongoDB Atlas**: Cloud database storing user accounts, interview logs, coding submissions, evaluation metrics, and streak/leaderboard standings.
+
+---
+
 ## 🚀 Deploying on Vercel
 
 1. Push your repository to GitHub.
