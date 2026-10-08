@@ -27,39 +27,40 @@ HireReady is built on a modern, decoupled serverless architecture separating sta
 ### Architecture Diagram
 
 ```mermaid
-flowchart TD
-    subgraph Client["Client Layer (Frontend)"]
-        UI["Landing & Dashboard UI (HTML5 / CSS / Vanilla JS)"]
-        Editor["Monaco Coding Sandbox & Anti-Cheat Engine"]
-        APIClient["API Client & Auth Manager (js/api.js)"]
+graph TD
+    subgraph Client ["Client Layer"]
+        UI["Landing and Dashboard UI"]
+        Editor["Monaco Sandbox and Anti-Cheat"]
+        APIClient["API Client and Auth Manager"]
     end
 
-    subgraph Auth["Authentication & Security Layer"]
-        SupaAuth["Supabase Auth (OAuth / Email Verification)"]
-        JWT["JWT Security Middleware (backend/middleware/auth.js)"]
+    subgraph Auth ["Authentication and Security"]
+        SupaAuth["Supabase Auth"]
+        JWT["JWT Security Middleware"]
     end
 
-    subgraph Gateway["Serverless API Gateway (Vercel / Express)"]
-        Router["Express API Router (api/index.js & backend/server.js)"]
-        AuthRoute["Auth Routes (/api/auth)"]
-        InterviewRoute["Interview Engine (/api/interview)"]
-        EvalRoute["Evaluation Engine (/api/evaluation)"]
-        UserRoute["User & Leaderboard Routes (/api/users & /api/leaderboard)"]
+    subgraph Gateway ["Serverless API Gateway - Vercel Express"]
+        Router["Express API Router"]
+        AuthRoute["Auth Routes"]
+        InterviewRoute["Interview Engine"]
+        EvalRoute["Evaluation Engine"]
+        UserRoute["User and Leaderboard Routes"]
     end
 
-    subgraph AI["AI Intelligence Engine"]
-        Groq["Groq API (Primary LLM - Low Latency LLaMA 3)"]
-        Gemini["Google Gemini API (Backup LLM Engine)"]
+    subgraph AI ["AI Intelligence Engine"]
+        Groq["Groq API - Primary LLaMA 3"]
+        Gemini["Google Gemini API - Backup LLM"]
     end
 
-    subgraph Storage["Persistence Layer"]
+    subgraph Storage ["Persistence Layer"]
         MongoDB[("MongoDB Atlas Database")]
     end
 
     UI --> APIClient
     Editor --> APIClient
-    APIClient <--> SupaAuth
-    APIClient -- "REST API (JWT Bearer Token)" --> Router
+    APIClient --> SupaAuth
+    SupaAuth --> APIClient
+    APIClient --> Router
 
     Router --> AuthRoute
     Router --> InterviewRoute
@@ -67,14 +68,14 @@ flowchart TD
     Router --> UserRoute
 
     AuthRoute --> JWT
-    JWT <--> MongoDB
+    JWT --> MongoDB
 
-    InterviewRoute <--> Groq
-    InterviewRoute <--> Gemini
-    InterviewRoute <--> MongoDB
+    InterviewRoute --> Groq
+    InterviewRoute --> Gemini
+    InterviewRoute --> MongoDB
 
-    EvalRoute <--> MongoDB
-    UserRoute <--> MongoDB
+    EvalRoute --> MongoDB
+    UserRoute --> MongoDB
 ```
 
 ### Component Breakdown
