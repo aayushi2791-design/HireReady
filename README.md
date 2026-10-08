@@ -8,7 +8,7 @@
 
 ## Tech Stack
 
-| Layer | Technology |
+| Tech Stack | Technology |
 |-------|-----------|
 | Frontend | HTML5, CSS3 (CSS Variables), Vanilla JS |
 | Backend | Node.js + Express.js |
@@ -16,6 +16,7 @@
 | AI Engine | Groq API (Main) / Gemini API (Backup) |
 | Auth | Supabase Auth (OAuth/Email) + JWT Fallback |
 | Deployment | Vercel (Serverless Functions) |
+| CI/CD | Vercel + GitHub Automated Deployment Pipeline |
 | Security | Helmet, Rate Limiting, Input Validation, Account Lockout |
 
 ---
@@ -111,6 +112,16 @@ graph TD
    - `SUPABASE_URL`: Your Supabase Project URL (`https://xyz.supabase.co`).
    - `SUPABASE_ANON_KEY`: Your Supabase Anonymous Key.
 4. Click **Deploy**! Vercel will automatically build the static frontend and route API endpoints via `@vercel/node`.
+
+---
+
+## ⚡ Continuous Integration & Continuous Deployment (CI/CD)
+
+HireReady utilizes an automated **CI/CD pipeline** powered by GitHub and Vercel:
+
+- **Automated Webhook Triggers**: Every code commit pushed to the `main` branch automatically initiates a fresh production build.
+- **Global Edge & Serverless Compilation**: Static frontend assets are deployed across Vercel's Edge CDN, while Express API routes are compiled into Node.js serverless functions.
+- **Zero-Downtime Deployment**: Production traffic seamlessly switches to the new build version upon passing all build and compilation checks.
 
 ---
 
